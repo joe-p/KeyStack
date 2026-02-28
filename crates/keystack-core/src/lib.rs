@@ -2,7 +2,11 @@ use std::{collections::HashMap, hash::Hash, path::PathBuf, sync::Arc};
 
 use snafu::Snafu;
 
-use crate::{backend::Backend, processor::PreProcessorError, provider::ProviderError};
+use crate::{
+    backend::Backend,
+    processor::PreProcessorError,
+    provider::{Provider, ProviderError},
+};
 
 pub mod backend;
 pub mod processor;
@@ -10,6 +14,12 @@ pub mod provider;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct KeyPath(PathBuf);
+
+impl From<&str> for KeyPath {
+    fn from(value: &str) -> Self {
+        Self(PathBuf::from(value))
+    }
+}
 
 #[derive(Debug, Snafu)]
 pub enum KeyStackError {
@@ -46,6 +56,26 @@ pub struct KeyStack {
     backend: Arc<dyn Backend>,
     pre_processors: HashMap<String, Arc<dyn processor::PreProcessor>>,
     providers: HashMap<String, Arc<dyn provider::Provider>>,
+}
+
+impl Default for KeyStack {
+    fn default() -> Self {
+        let ed25519_provider = provider::libcrux_ed25519::LibCruxEd25519Provider;
+
+        let providers = HashMap::from([(
+            ed25519_provider.name(),
+            Arc::new(ed25519_provider) as Arc<dyn provider::Provider>,
+        )]);
+
+        Self {
+            required_pre_processors: Vec::new(),
+            backend: Arc::new(backend::hashmap_backend::HashMapBackend {
+                store: std::sync::Mutex::new(HashMap::new()),
+            }),
+            pre_processors: HashMap::new(),
+            providers,
+        }
+    }
 }
 
 impl KeyStack {

@@ -2,10 +2,20 @@ use std::sync::Arc;
 
 use super::KeyPath;
 use async_trait::async_trait;
-pub enum BackendError {}
+use snafu::Snafu;
+
+#[derive(Debug, Snafu)]
+pub enum BackendError {
+    #[snafu(display("Key not found: {}", path.0.to_string_lossy()))]
+    KeyNotFound { path: KeyPath },
+    #[snafu(display("Key already exists: {}", path.0.to_string_lossy()))]
+    AlreadyExists { path: KeyPath },
+}
+
+pub mod hashmap_backend;
 
 #[async_trait]
-pub trait Backend {
+pub trait Backend: Send + Sync {
     async fn read(&self, path: &KeyPath, destination: &mut [u8]) -> Result<usize, BackendError>;
     async fn create(&self, path: &KeyPath, data: &[u8]) -> Result<(), BackendError>;
     async fn update(&self, path: &KeyPath, data: &[u8]) -> Result<(), BackendError>;
