@@ -8,3 +8,6 @@ async-trait = "0.1.89"
 getrandom = "0.4.1"
 libcrux-ed25519 = "0.0.6"
 snafu = "0.8.9"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

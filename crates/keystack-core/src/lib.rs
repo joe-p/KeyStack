@@ -148,3 +148,63 @@ impl KeyStack {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{KeyPath, KeyStack, KeyStackRequest, KeyStackResponse};
+    use libcrux_ed25519::verify;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn default_keystack_generates_key_and_signs_payload() {
+        let keystack = KeyStack::default();
+        let key_path: KeyPath = "test-key".into();
+
+        let generate_response = keystack
+            .handle_request(KeyStackRequest::Action {
+                key_path: key_path.clone(),
+                pre_processor_ids: Vec::new(),
+                action_id: "generate".to_string(),
+                payload: Vec::new(),
+                provider_id: "builtin-libcrux-ed25519".to_string(),
+            })
+            .await
+            .expect("generate action should succeed");
+
+        let generated_public_key = match generate_response {
+            KeyStackResponse::Action {
+                provider_response, ..
+            } => provider_response,
+        };
+
+        assert_eq!(generated_public_key.len(), 32);
+
+        let public_key: [u8; 32] = generated_public_key
+            .try_into()
+            .expect("generated public key should be 32 bytes");
+
+        let payload = b"payload-to-sign".to_vec();
+
+        let sign_response = keystack
+            .handle_request(KeyStackRequest::Action {
+                key_path,
+                pre_processor_ids: Vec::new(),
+                action_id: "sign".to_string(),
+                payload: payload.clone(),
+                provider_id: "builtin-libcrux-ed25519".to_string(),
+            })
+            .await
+            .expect("sign action should succeed");
+
+        let signature = match sign_response {
+            KeyStackResponse::Action {
+                provider_response, ..
+            } => provider_response,
+        };
+
+        assert_eq!(signature.len(), 64);
+
+        let signature: [u8; 64] = signature.try_into().expect("signature should be 64 bytes");
+
+        verify(&payload, &public_key, &signature).expect("signature should verify");
+    }
+}
