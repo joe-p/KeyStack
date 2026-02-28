@@ -1,11 +1,12 @@
 use snafu::Snafu;
 
-use crate::KeyPath;
+use crate::{KeyPath, id_manager::User};
 
 #[derive(Debug, Snafu)]
 pub enum PreProcessorError {}
 
 pub struct PreProcessContext {
+    pub user: User,
     pub key_path: KeyPath,
     pub action_id: String,
     pub payload: Vec<u8>,

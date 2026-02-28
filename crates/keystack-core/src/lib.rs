@@ -4,11 +4,13 @@ use snafu::Snafu;
 
 use crate::{
     backend::Backend,
+    id_manager::IdentityManagerError,
     processor::PreProcessorError,
     provider::{Provider, ProviderError},
 };
 
 pub mod backend;
+pub mod id_manager;
 pub mod processor;
 pub mod provider;
 
@@ -31,6 +33,14 @@ pub enum KeyStackError {
     PreProcessorNotFound { id: String },
     #[snafu(display("Provider not found: {}", id))]
     ProviderNotFound { id: String },
+    #[snafu(display("Identity manager error: {}", source))]
+    IdentityManagerError { source: IdentityManagerError },
+}
+
+impl From<IdentityManagerError> for KeyStackError {
+    fn from(source: IdentityManagerError) -> Self {
+        KeyStackError::IdentityManagerError { source }
+    }
 }
 
 pub enum KeyStackRequest {
@@ -40,6 +50,8 @@ pub enum KeyStackRequest {
         action_id: String,
         payload: Vec<u8>,
         provider_id: String,
+        auth_data: Option<Vec<u8>>,
+        user_id: Option<String>,
     },
 }
 
@@ -56,6 +68,7 @@ pub struct KeyStack {
     backend: Arc<dyn Backend>,
     pre_processors: HashMap<String, Arc<dyn processor::PreProcessor>>,
     providers: HashMap<String, Arc<dyn provider::Provider>>,
+    identity_manager: Arc<dyn id_manager::IdentityManager>,
 }
 
 impl Default for KeyStack {
@@ -68,6 +81,7 @@ impl Default for KeyStack {
         )]);
 
         Self {
+            identity_manager: Arc::new(id_manager::disabled_id_manager::DisabledIdentityManager),
             required_pre_processors: Vec::new(),
             backend: Arc::new(backend::hashmap_backend::HashMapBackend {
                 store: std::sync::Mutex::new(HashMap::new()),
@@ -90,7 +104,17 @@ impl KeyStack {
                 action_id,
                 payload,
                 provider_id,
+                auth_data,
+                user_id,
             } => {
+                self.identity_manager
+                    .user_authenticate(&user_id.clone().unwrap_or_default(), auth_data.as_deref())
+                    .await?;
+
+                let user = id_manager::User::new(
+                    "default-user".to_string(),
+                    self.identity_manager.clone(),
+                );
                 let all_pre_processor_ids = self
                     .required_pre_processors
                     .iter()
@@ -99,6 +123,7 @@ impl KeyStack {
                     .collect::<Vec<_>>();
 
                 let context = processor::PreProcessContext {
+                    user,
                     key_path: key_path.clone(),
                     action_id: action_id.clone(),
                     payload: payload.clone(),
@@ -161,6 +186,8 @@ mod tests {
 
         let generate_response = keystack
             .handle_request(KeyStackRequest::Action {
+                auth_data: None,
+                user_id: None,
                 key_path: key_path.clone(),
                 pre_processor_ids: Vec::new(),
                 action_id: "generate".to_string(),
@@ -186,6 +213,8 @@ mod tests {
 
         let sign_response = keystack
             .handle_request(KeyStackRequest::Action {
+                auth_data: None,
+                user_id: None,
                 key_path,
                 pre_processor_ids: Vec::new(),
                 action_id: "sign".to_string(),
