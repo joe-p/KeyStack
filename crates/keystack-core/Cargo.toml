@@ -1,0 +1,8 @@
+[package]
+name = "keystack-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1.89"
+snafu = "0.8.9"
