@@ -164,8 +164,8 @@ impl PreActionPlugin for WasmPreActionPlugin {
 mod tests {
     use super::*;
     use crate::KeyPath;
-    use crate::id_manager::User;
-    use crate::id_manager::disabled_id_manager::DisabledIdentityManager;
+    use crate::id_provider::User;
+    use crate::id_provider::disabled_id_provider::DisabledIdentityProvider;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -227,8 +227,8 @@ mod tests {
         let plugin = WasmPreActionPlugin::from_module(&engine, wat).unwrap();
 
         // Create test context with sample data
-        let identity_manager = Arc::new(DisabledIdentityManager);
-        let user = User::new("test-user-123".to_string(), identity_manager);
+        let identity_provider = Arc::new(DisabledIdentityProvider);
+        let user = User::new("test-user-123".to_string(), identity_provider);
         let key_path = KeyPath(PathBuf::from("test/key/path"));
         let action_id = "test-action".to_string();
         let payload = vec![1, 2, 3, 4, 5];

@@ -4,13 +4,13 @@ use snafu::Snafu;
 
 use crate::{
     backend::Backend,
-    id_manager::IdentityManagerError,
+    id_provider::IdentityProviderError,
     plugin::PreActionPluginError,
     provider::{Provider, ProviderError},
 };
 
 pub mod backend;
-pub mod id_manager;
+pub mod id_provider;
 pub mod plugin;
 pub mod provider;
 
@@ -33,13 +33,13 @@ pub enum KeyStackError {
     PreActionPluginNotFound { id: String },
     #[snafu(display("Provider not found: {}", id))]
     ProviderNotFound { id: String },
-    #[snafu(display("Identity manager error: {}", source))]
-    IdentityManagerError { source: IdentityManagerError },
+    #[snafu(display("Identity provider error: {}", source))]
+    IdentityProvider { source: IdentityProviderError },
 }
 
-impl From<IdentityManagerError> for KeyStackError {
-    fn from(source: IdentityManagerError) -> Self {
-        KeyStackError::IdentityManagerError { source }
+impl From<IdentityProviderError> for KeyStackError {
+    fn from(source: IdentityProviderError) -> Self {
+        KeyStackError::IdentityProvider { source }
     }
 }
 
@@ -68,7 +68,7 @@ pub struct KeyStack {
     backend: Arc<dyn Backend>,
     pre_action_plugins: HashMap<String, Arc<dyn plugin::PreActionPlugin>>,
     providers: HashMap<String, Arc<dyn provider::Provider>>,
-    identity_manager: Arc<dyn id_manager::IdentityManager>,
+    identity_manager: Arc<dyn id_provider::IdentityProvider>,
 }
 
 impl Default for KeyStack {
@@ -81,7 +81,7 @@ impl Default for KeyStack {
         )]);
 
         Self {
-            identity_manager: Arc::new(id_manager::disabled_id_manager::DisabledIdentityManager),
+            identity_manager: Arc::new(id_provider::disabled_id_provider::DisabledIdentityProvider),
             required_pre_action_plugins: Vec::new(),
             backend: Arc::new(backend::hashmap_backend::HashMapBackend {
                 store: std::sync::Mutex::new(HashMap::new()),
@@ -111,7 +111,7 @@ impl KeyStack {
                     .user_authenticate(&user_id.clone().unwrap_or_default(), auth_data.as_deref())
                     .await?;
 
-                let user = id_manager::User::new(
+                let user = id_provider::User::new(
                     "default-user".to_string(),
                     self.identity_manager.clone(),
                 );

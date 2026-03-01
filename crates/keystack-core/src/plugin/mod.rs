@@ -1,6 +1,6 @@
 use snafu::Snafu;
 
-use crate::{KeyPath, id_manager::User, plugin::wasm_pre_action_plugin::WasmPreActionPluginError};
+use crate::{KeyPath, id_provider::User, plugin::wasm_pre_action_plugin::WasmPreActionPluginError};
 
 pub mod wasm_pre_action_plugin;
 
