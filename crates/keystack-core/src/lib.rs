@@ -4,15 +4,15 @@ use snafu::Snafu;
 
 use crate::{
     backend::Backend,
+    crypto_provider::{CryptoProvider, CryptoProviderError},
     id_provider::IdentityProviderError,
     plugin::PreActionPluginError,
-    provider::{Provider, ProviderError},
 };
 
 pub mod backend;
+pub mod crypto_provider;
 pub mod id_provider;
 pub mod plugin;
-pub mod provider;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct KeyPath(PathBuf);
@@ -28,7 +28,7 @@ pub enum KeyStackError {
     #[snafu(display("PreActionPlugin failed: {}", source))]
     PreActionPluginError { source: PreActionPluginError },
     #[snafu(display("Provider action failed: {}", source))]
-    ProviderError { source: ProviderError },
+    CryptoProviderError { source: CryptoProviderError },
     #[snafu(display("PreActionPlugin not found: {}", id))]
     PreActionPluginNotFound { id: String },
     #[snafu(display("Provider not found: {}", id))]
@@ -49,7 +49,7 @@ pub enum KeyStackRequest {
         pre_action_plugin_ids: Vec<String>,
         action_id: String,
         payload: Vec<u8>,
-        provider_id: String,
+        crypto_provider_id: String,
         auth_data: Option<Vec<u8>>,
         user_id: Option<String>,
     },
@@ -67,17 +67,17 @@ pub struct KeyStack {
     required_pre_action_plugins: Vec<String>,
     backend: Arc<dyn Backend>,
     pre_action_plugins: HashMap<String, Arc<dyn plugin::PreActionPlugin>>,
-    providers: HashMap<String, Arc<dyn provider::Provider>>,
+    crypto_providers: HashMap<String, Arc<dyn crypto_provider::CryptoProvider>>,
     identity_manager: Arc<dyn id_provider::IdentityProvider>,
 }
 
 impl Default for KeyStack {
     fn default() -> Self {
-        let ed25519_provider = provider::libcrux_ed25519::LibCruxEd25519Provider;
+        let ed25519_provider = crypto_provider::libcrux_ed25519::LibCruxEd25519Provider;
 
-        let providers = HashMap::from([(
+        let crypto_providers = HashMap::from([(
             ed25519_provider.name(),
-            Arc::new(ed25519_provider) as Arc<dyn provider::Provider>,
+            Arc::new(ed25519_provider) as Arc<dyn crypto_provider::CryptoProvider>,
         )]);
 
         Self {
@@ -87,7 +87,7 @@ impl Default for KeyStack {
                 store: std::sync::Mutex::new(HashMap::new()),
             }),
             pre_action_plugins: HashMap::new(),
-            providers,
+            crypto_providers,
         }
     }
 }
@@ -103,7 +103,7 @@ impl KeyStack {
                 pre_action_plugin_ids,
                 action_id,
                 payload,
-                provider_id,
+                crypto_provider_id,
                 auth_data,
                 user_id,
             } => {
@@ -144,16 +144,17 @@ impl KeyStack {
                     plugin_results.insert(plugin_id, result);
                 }
 
-                let provider = self.providers.get(provider_id).ok_or_else(|| {
-                    KeyStackError::ProviderNotFound {
-                        id: provider_id.clone(),
-                    }
-                })?;
+                let provider = self
+                    .crypto_providers
+                    .get(crypto_provider_id)
+                    .ok_or_else(|| KeyStackError::ProviderNotFound {
+                        id: crypto_provider_id.clone(),
+                    })?;
 
                 let scoped_backend =
                     backend::ScopedBackend::new(self.backend.clone(), key_path.clone());
 
-                let action_request = provider::ActionRequest {
+                let action_request = crypto_provider::ActionRequest {
                     action_id: action_id.clone(),
                     scoped_backend,
                     payload: payload.clone(),
@@ -161,7 +162,7 @@ impl KeyStack {
                 let provider_response = provider
                     .do_action(&action_request)
                     .await
-                    .map_err(|e| KeyStackError::ProviderError { source: e })?;
+                    .map_err(|e| KeyStackError::CryptoProviderError { source: e })?;
 
                 Ok(KeyStackResponse::Action {
                     action_id: action_id.clone(),
@@ -191,7 +192,7 @@ mod tests {
                 pre_action_plugin_ids: Vec::new(),
                 action_id: "generate".to_string(),
                 payload: Vec::new(),
-                provider_id: "builtin-libcrux-ed25519".to_string(),
+                crypto_provider_id: "builtin-libcrux-ed25519".to_string(),
             })
             .await
             .expect("generate action should succeed");
@@ -218,7 +219,7 @@ mod tests {
                 pre_action_plugin_ids: Vec::new(),
                 action_id: "sign".to_string(),
                 payload: payload.clone(),
-                provider_id: "builtin-libcrux-ed25519".to_string(),
+                crypto_provider_id: "builtin-libcrux-ed25519".to_string(),
             })
             .await
             .expect("sign action should succeed");

@@ -12,24 +12,24 @@ pub struct ActionRequest {
 }
 
 #[derive(Debug, Snafu)]
-pub enum ProviderError {
+pub enum CryptoProviderError {
     #[snafu(display("Provider action failed due to backend error: {}", source))]
     BackendError {
         source: crate::backend::BackendError,
     },
     #[snafu(display("Provider error: {}", message))]
-    ProviderError { message: String },
+    CryptoProviderError { message: String },
 }
 
-impl From<String> for ProviderError {
+impl From<String> for CryptoProviderError {
     fn from(s: String) -> Self {
-        ProviderError::ProviderError { message: s }
+        CryptoProviderError::CryptoProviderError { message: s }
     }
 }
 
 #[async_trait]
-pub trait Provider {
-    async fn do_action(&self, request: &ActionRequest) -> Result<Vec<u8>, ProviderError>;
+pub trait CryptoProvider {
+    async fn do_action(&self, request: &ActionRequest) -> Result<Vec<u8>, CryptoProviderError>;
 
     fn name(&self) -> String;
 

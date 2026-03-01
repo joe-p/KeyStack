@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use libcrux_ed25519::{secret_to_public, sign};
 
-use crate::provider::{Provider, ProviderError};
+use crate::crypto_provider::{CryptoProvider, CryptoProviderError};
 
 pub struct LibCruxEd25519Provider;
 
@@ -21,7 +21,7 @@ impl From<&str> for LibCruxEd25519Action {
 }
 
 #[async_trait]
-impl Provider for LibCruxEd25519Provider {
+impl CryptoProvider for LibCruxEd25519Provider {
     fn name(&self) -> String {
         "builtin-libcrux-ed25519".to_string()
     }
@@ -32,8 +32,8 @@ impl Provider for LibCruxEd25519Provider {
 
     async fn do_action(
         &self,
-        request: &crate::provider::ActionRequest,
-    ) -> Result<Vec<u8>, ProviderError> {
+        request: &crate::crypto_provider::ActionRequest,
+    ) -> Result<Vec<u8>, CryptoProviderError> {
         let action = LibCruxEd25519Action::from(request.action_id.as_str());
         match action {
             LibCruxEd25519Action::Generate => {
@@ -44,7 +44,7 @@ impl Provider for LibCruxEd25519Provider {
                     .scoped_backend
                     .create(&"".into(), &random_bytes)
                     .await
-                    .map_err(|e| ProviderError::BackendError { source: e })?;
+                    .map_err(|e| CryptoProviderError::BackendError { source: e })?;
 
                 let mut pk = [0u8; 32];
                 secret_to_public(&mut pk, &random_bytes);
