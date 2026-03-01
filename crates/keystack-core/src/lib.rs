@@ -122,7 +122,7 @@ impl KeyStack {
                     .cloned()
                     .collect::<Vec<_>>();
 
-                let context = processor::PreProcessContext {
+                let context = processor::PreProcessorContext {
                     user,
                     key_path: key_path.clone(),
                     action_id: action_id.clone(),

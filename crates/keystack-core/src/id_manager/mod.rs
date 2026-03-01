@@ -29,6 +29,10 @@ impl User {
             .user_has_role(&self.user_id, role_id)
             .await
     }
+
+    pub fn id(&self) -> &str {
+        &self.user_id
+    }
 }
 
 #[async_trait]
