@@ -23,7 +23,6 @@ pub enum WasmPreProcessorError {
     GetFuncFailed,
     GetMemoryFailed,
     AllocFailed,
-    DeallocFailed,
     MemoryWriteFailed,
     MemoryReadFailed,
     CallFailed,
@@ -105,10 +104,6 @@ impl PreProcessor for WasmPreProcessor {
             .get_typed_func::<i32, i32>(&mut store, "alloc")
             .map_err(|_| WasmPreProcessorError::GetFuncFailed)?;
 
-        let dealloc_func = instance
-            .get_typed_func::<(i32, i32), ()>(&mut store, "dealloc")
-            .map_err(|_| WasmPreProcessorError::GetFuncFailed)?;
-
         let process_func = instance
             .get_typed_func::<(i32, i32, i32, i32, i32, i32, i32, i32), (i32, i32)>(
                 &mut store, "process",
@@ -149,18 +144,11 @@ impl PreProcessor for WasmPreProcessor {
             )
             .map_err(|_| WasmPreProcessorError::CallFailed)?;
 
-        let _ = dealloc_func.call(&mut store, (user_ptr, user_len));
-        let _ = dealloc_func.call(&mut store, (key_path_ptr, key_path_len));
-        let _ = dealloc_func.call(&mut store, (action_id_ptr, action_id_len));
-        let _ = dealloc_func.call(&mut store, (payload_ptr, payload_len));
-
         let result_len_usize = result_len as usize;
         let mut result_bytes = vec![0u8; result_len_usize];
         memory
             .read(&mut store, result_ptr as usize, &mut result_bytes)
             .map_err(|_| WasmPreProcessorError::MemoryReadFailed)?;
-
-        let _ = dealloc_func.call(&mut store, (result_ptr, result_len));
 
         println!("WASM pre-processing completed in {:?}", start.elapsed());
 
@@ -205,14 +193,7 @@ mod tests {
                 ;; Return allocated pointer
                 (local.get $ptr)
             )
-            
-            ;; dealloc: Free allocated memory
-            ;; ptr, size
-            (func (export "dealloc") (param $ptr i32) (param $size i32)
-                ;; In this simple bump allocator, we don't actually free
-                ;; But we keep the export for future more sophisticated allocators
-            )
-            
+             
             ;; process: Accepts 8 parameters (4 pointers + 4 lengths) for context members
             ;; user_ptr, user_len, key_path_ptr, key_path_len,
             ;; action_id_ptr, action_id_len, payload_ptr, payload_len
