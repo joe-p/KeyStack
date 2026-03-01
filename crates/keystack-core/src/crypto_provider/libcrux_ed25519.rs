@@ -41,10 +41,10 @@ impl CryptoProvider for LibCruxEd25519Provider {
                 getrandom::fill(&mut random_bytes).unwrap();
 
                 request
-                    .scoped_backend
+                    .scoped_secret_provider
                     .create(&"".into(), &random_bytes)
                     .await
-                    .map_err(|e| CryptoProviderError::BackendError { source: e })?;
+                    .map_err(|e| CryptoProviderError::SecretProviderError { source: e })?;
 
                 let mut pk = [0u8; 32];
                 secret_to_public(&mut pk, &random_bytes);
@@ -54,7 +54,7 @@ impl CryptoProvider for LibCruxEd25519Provider {
             LibCruxEd25519Action::Sign => {
                 let mut key_bytes = [0u8; 32];
                 request
-                    .scoped_backend
+                    .scoped_secret_provider
                     .read(&"".into(), &mut key_bytes)
                     .await
                     .unwrap();

@@ -3,13 +3,13 @@ use std::{collections::HashMap, hash::Hash, path::PathBuf, sync::Arc};
 use snafu::Snafu;
 
 use crate::{
-    backend::Backend,
+    secret_provider::SecretProvider,
     crypto_provider::{CryptoProvider, CryptoProviderError},
     id_provider::IdentityProviderError,
     context_provider::ContextProviderError,
 };
 
-pub mod backend;
+pub mod secret_provider;
 pub mod context_provider;
 pub mod crypto_provider;
 pub mod id_provider;
@@ -65,7 +65,7 @@ pub enum KeyStackResponse {
 
 pub struct KeyStack {
     required_context_providers: Vec<String>,
-    backend: Arc<dyn Backend>,
+    secret_provider: Arc<dyn SecretProvider>,
     context_providers: HashMap<String, Arc<dyn context_provider::ContextProvider>>,
     crypto_providers: HashMap<String, Arc<dyn crypto_provider::CryptoProvider>>,
     identity_manager: Arc<dyn id_provider::IdentityProvider>,
@@ -83,7 +83,7 @@ impl Default for KeyStack {
         Self {
             identity_manager: Arc::new(id_provider::disabled_id_provider::DisabledIdentityProvider),
             required_context_providers: Vec::new(),
-            backend: Arc::new(backend::hashmap_backend::HashMapBackend {
+            secret_provider: Arc::new(secret_provider::hashmap_secret_provider::HashMapSecretProvider {
                 store: std::sync::Mutex::new(HashMap::new()),
             }),
             context_providers: HashMap::new(),
@@ -151,12 +151,12 @@ impl KeyStack {
                         id: crypto_provider_id.clone(),
                     })?;
 
-                let scoped_backend =
-                    backend::ScopedBackend::new(self.backend.clone(), key_path.clone());
+                let scoped_secret_provider =
+                    secret_provider::ScopedSecretProvider::new(self.secret_provider.clone(), key_path.clone());
 
                 let action_request = crypto_provider::ActionRequest {
                     action_id: action_id.clone(),
-                    scoped_backend,
+                    scoped_secret_provider,
                     payload: payload.clone(),
                 };
                 let provider_response = provider
