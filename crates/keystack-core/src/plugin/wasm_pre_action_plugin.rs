@@ -1,11 +1,11 @@
-use keystack_wasm_guest::PreProcessorGuestContext;
+use keystack_wasm_guest::PreActionPluginGuestContext;
 use snafu::Snafu;
 use wasmtime::{Caller, Engine, Linker, Memory, Module, Store, TypedFunc};
 
-use crate::processor::{PreProcessor, PreProcessorContext, PreProcessorError};
+use crate::plugin::{PreActionPlugin, PreActionPluginContext, PreActionPluginError};
 
-impl From<PreProcessorContext> for PreProcessorGuestContext {
-    fn from(context: PreProcessorContext) -> Self {
+impl From<PreActionPluginContext> for PreActionPluginGuestContext {
+    fn from(context: PreActionPluginContext) -> Self {
         Self {
             user: context.user.id().to_string(),
             key_path: context.key_path.0,
@@ -16,7 +16,7 @@ impl From<PreProcessorContext> for PreProcessorGuestContext {
 }
 
 #[derive(Debug, Snafu)]
-pub enum WasmPreProcessorError {
+pub enum WasmPreActionPluginError {
     ModuleFailed,
     LinkerFailed,
     InstantiateFailed,
@@ -28,18 +28,18 @@ pub enum WasmPreProcessorError {
     CallFailed,
 }
 
-pub struct WasmPreProcessor {
+pub struct WasmPreActionPlugin {
     engine: Engine,
     module: Module,
 }
 
-impl WasmPreProcessor {
+impl WasmPreActionPlugin {
     pub fn from_module(
         engine: &Engine,
         wasm_bytes: impl AsRef<[u8]>,
-    ) -> Result<Self, WasmPreProcessorError> {
+    ) -> Result<Self, WasmPreActionPluginError> {
         let module =
-            Module::new(engine, wasm_bytes).map_err(|_| WasmPreProcessorError::ModuleFailed)?;
+            Module::new(engine, wasm_bytes).map_err(|_| WasmPreActionPluginError::ModuleFailed)?;
 
         Ok(Self {
             engine: engine.clone(),
@@ -53,27 +53,30 @@ impl WasmPreProcessor {
         alloc_func: &TypedFunc<i32, i32>,
         memory: &Memory,
         data: &[u8],
-    ) -> Result<(i32, i32), WasmPreProcessorError> {
+    ) -> Result<(i32, i32), WasmPreActionPluginError> {
         let len = data.len() as i32;
 
         let ptr = alloc_func
             .call(&mut *store, len)
-            .map_err(|_| WasmPreProcessorError::AllocFailed)?;
+            .map_err(|_| WasmPreActionPluginError::AllocFailed)?;
 
         if ptr == 0 {
-            return Err(WasmPreProcessorError::AllocFailed);
+            return Err(WasmPreActionPluginError::AllocFailed);
         }
 
         memory
             .write(store, ptr as usize, data)
-            .map_err(|_| WasmPreProcessorError::MemoryWriteFailed)?;
+            .map_err(|_| WasmPreActionPluginError::MemoryWriteFailed)?;
 
         Ok((ptr, len))
     }
 }
 
-impl PreProcessor for WasmPreProcessor {
-    fn pre_process(&self, context: &PreProcessorContext) -> Result<Vec<u8>, PreProcessorError> {
+impl PreActionPlugin for WasmPreActionPlugin {
+    fn pre_action_hook(
+        &self,
+        context: &PreActionPluginContext,
+    ) -> Result<Vec<u8>, PreActionPluginError> {
         let start = std::time::Instant::now();
 
         // Host functionality can be arbitrary Rust functions and is provided
@@ -88,27 +91,28 @@ impl PreProcessor for WasmPreProcessor {
                     println!("Got {} from WebAssembly", param);
                 },
             )
-            .map_err(|_| WasmPreProcessorError::LinkerFailed)?;
+            .map_err(|_| WasmPreActionPluginError::LinkerFailed)?;
 
         let mut store = Store::new(&self.engine, ());
 
         let instance = linker
             .instantiate(&mut store, &self.module)
-            .map_err(|_| WasmPreProcessorError::InstantiateFailed)?;
+            .map_err(|_| WasmPreActionPluginError::InstantiateFailed)?;
 
         let memory = instance
             .get_memory(&mut store, "memory")
-            .ok_or(WasmPreProcessorError::GetMemoryFailed)?;
+            .ok_or(WasmPreActionPluginError::GetMemoryFailed)?;
 
         let alloc_func = instance
             .get_typed_func::<i32, i32>(&mut store, "alloc")
-            .map_err(|_| WasmPreProcessorError::GetFuncFailed)?;
+            .map_err(|_| WasmPreActionPluginError::GetFuncFailed)?;
 
-        let process_func = instance
+        let hook = instance
             .get_typed_func::<(i32, i32, i32, i32, i32, i32, i32, i32), (i32, i32)>(
-                &mut store, "process",
+                &mut store,
+                "pre_action_hook",
             )
-            .map_err(|_| WasmPreProcessorError::GetFuncFailed)?;
+            .map_err(|_| WasmPreActionPluginError::GetFuncFailed)?;
 
         let user_bytes = context.user.id().to_string().into_bytes();
         let key_path_bytes = context
@@ -128,7 +132,7 @@ impl PreProcessor for WasmPreProcessor {
         let (payload_ptr, payload_len) =
             self.alloc_and_write(&mut store, &alloc_func, &memory, &context.payload)?;
 
-        let (result_ptr, result_len) = process_func
+        let (result_ptr, result_len) = hook
             .call(
                 &mut store,
                 (
@@ -142,15 +146,15 @@ impl PreProcessor for WasmPreProcessor {
                     payload_len,
                 ),
             )
-            .map_err(|_| WasmPreProcessorError::CallFailed)?;
+            .map_err(|_| WasmPreActionPluginError::CallFailed)?;
 
         let result_len_usize = result_len as usize;
         let mut result_bytes = vec![0u8; result_len_usize];
         memory
             .read(&mut store, result_ptr as usize, &mut result_bytes)
-            .map_err(|_| WasmPreProcessorError::MemoryReadFailed)?;
+            .map_err(|_| WasmPreActionPluginError::MemoryReadFailed)?;
 
-        println!("WASM pre-processing completed in {:?}", start.elapsed());
+        println!("WASM pre-action plugin completed in {:?}", start.elapsed());
 
         Ok(result_bytes)
     }
@@ -166,7 +170,7 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn test_wasm_pre_processor_with_context() {
+    fn test_wasm_pre_action_plugin_with_context() {
         let engine = Engine::default();
         let wat = r#"
         (module
@@ -194,11 +198,11 @@ mod tests {
                 (local.get $ptr)
             )
              
-            ;; process: Accepts 8 parameters (4 pointers + 4 lengths) for context members
+            ;; pre_action_hook: Accepts 8 parameters (4 pointers + 4 lengths) for context members
             ;; user_ptr, user_len, key_path_ptr, key_path_len,
             ;; action_id_ptr, action_id_len, payload_ptr, payload_len
             ;; Returns: (ptr, len) tuple pointing to result data
-            (func (export "process") 
+            (func (export "pre_action_hook") 
                 (param $user_ptr i32) (param $user_len i32)
                 (param $key_path_ptr i32) (param $key_path_len i32)
                 (param $action_id_ptr i32) (param $action_id_len i32)
@@ -220,7 +224,7 @@ mod tests {
         )
     "#;
 
-        let pre_processor = WasmPreProcessor::from_module(&engine, wat).unwrap();
+        let plugin = WasmPreActionPlugin::from_module(&engine, wat).unwrap();
 
         // Create test context with sample data
         let identity_manager = Arc::new(DisabledIdentityManager);
@@ -229,16 +233,16 @@ mod tests {
         let action_id = "test-action".to_string();
         let payload = vec![1, 2, 3, 4, 5];
 
-        let context = PreProcessorContext {
+        let context = PreActionPluginContext {
             user,
             key_path,
             action_id,
             payload,
         };
 
-        let result = pre_processor.pre_process(&context).unwrap();
+        let result = plugin.pre_action_hook(&context).unwrap();
 
-        // The process function returns test data: [0x01, 0x02, 0x03, 0x04]
+        // The pre_action_hook function returns test data: [0x01, 0x02, 0x03, 0x04]
         assert_eq!(result, vec![0x01, 0x02, 0x03, 0x04]);
     }
 }

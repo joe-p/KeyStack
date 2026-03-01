@@ -5,13 +5,13 @@ use snafu::Snafu;
 use crate::{
     backend::Backend,
     id_manager::IdentityManagerError,
-    processor::PreProcessorError,
+    plugin::PreActionPluginError,
     provider::{Provider, ProviderError},
 };
 
 pub mod backend;
 pub mod id_manager;
-pub mod processor;
+pub mod plugin;
 pub mod provider;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -25,12 +25,12 @@ impl From<&str> for KeyPath {
 
 #[derive(Debug, Snafu)]
 pub enum KeyStackError {
-    #[snafu(display("Pre-processing failed: {}", source))]
-    PreProcessorError { source: PreProcessorError },
+    #[snafu(display("PreActionPlugin failed: {}", source))]
+    PreActionPluginError { source: PreActionPluginError },
     #[snafu(display("Provider action failed: {}", source))]
     ProviderError { source: ProviderError },
-    #[snafu(display("Pre-processor not found: {}", id))]
-    PreProcessorNotFound { id: String },
+    #[snafu(display("PreActionPlugin not found: {}", id))]
+    PreActionPluginNotFound { id: String },
     #[snafu(display("Provider not found: {}", id))]
     ProviderNotFound { id: String },
     #[snafu(display("Identity manager error: {}", source))]
@@ -46,7 +46,7 @@ impl From<IdentityManagerError> for KeyStackError {
 pub enum KeyStackRequest {
     Action {
         key_path: KeyPath,
-        pre_processor_ids: Vec<String>,
+        pre_action_plugin_ids: Vec<String>,
         action_id: String,
         payload: Vec<u8>,
         provider_id: String,
@@ -58,15 +58,15 @@ pub enum KeyStackRequest {
 pub enum KeyStackResponse {
     Action {
         action_id: String,
-        pre_processor_context: HashMap<String, Vec<u8>>,
+        pre_action_context: HashMap<String, Vec<u8>>,
         provider_response: Vec<u8>,
     },
 }
 
 pub struct KeyStack {
-    required_pre_processors: Vec<String>,
+    required_pre_action_plugins: Vec<String>,
     backend: Arc<dyn Backend>,
-    pre_processors: HashMap<String, Arc<dyn processor::PreProcessor>>,
+    pre_action_plugins: HashMap<String, Arc<dyn plugin::PreActionPlugin>>,
     providers: HashMap<String, Arc<dyn provider::Provider>>,
     identity_manager: Arc<dyn id_manager::IdentityManager>,
 }
@@ -82,11 +82,11 @@ impl Default for KeyStack {
 
         Self {
             identity_manager: Arc::new(id_manager::disabled_id_manager::DisabledIdentityManager),
-            required_pre_processors: Vec::new(),
+            required_pre_action_plugins: Vec::new(),
             backend: Arc::new(backend::hashmap_backend::HashMapBackend {
                 store: std::sync::Mutex::new(HashMap::new()),
             }),
-            pre_processors: HashMap::new(),
+            pre_action_plugins: HashMap::new(),
             providers,
         }
     }
@@ -100,7 +100,7 @@ impl KeyStack {
         match &request {
             KeyStackRequest::Action {
                 key_path,
-                pre_processor_ids,
+                pre_action_plugin_ids,
                 action_id,
                 payload,
                 provider_id,
@@ -115,34 +115,33 @@ impl KeyStack {
                     "default-user".to_string(),
                     self.identity_manager.clone(),
                 );
-                let all_pre_processor_ids = self
-                    .required_pre_processors
+                let all_pre_action_plugin_ids = self
+                    .required_pre_action_plugins
                     .iter()
-                    .chain(pre_processor_ids.iter())
+                    .chain(pre_action_plugin_ids.iter())
                     .cloned()
                     .collect::<Vec<_>>();
 
-                let context = processor::PreProcessorContext {
+                let context = plugin::PreActionPluginContext {
                     user,
                     key_path: key_path.clone(),
                     action_id: action_id.clone(),
                     payload: payload.clone(),
                 };
 
-                let mut pre_processor_results = HashMap::new();
-                for pre_processor_str in all_pre_processor_ids {
-                    let pre_processor =
-                        self.pre_processors.get(&pre_processor_str).ok_or_else(|| {
-                            KeyStackError::PreProcessorNotFound {
-                                id: pre_processor_str.clone(),
-                            }
-                        })?;
+                let mut plugin_results = HashMap::new();
+                for plugin_id in all_pre_action_plugin_ids {
+                    let plugin = self.pre_action_plugins.get(&plugin_id).ok_or_else(|| {
+                        KeyStackError::PreActionPluginNotFound {
+                            id: plugin_id.clone(),
+                        }
+                    })?;
 
-                    let result = pre_processor
-                        .pre_process(&context)
-                        .map_err(|e| KeyStackError::PreProcessorError { source: e })?;
+                    let result = plugin
+                        .pre_action_hook(&context)
+                        .map_err(|e| KeyStackError::PreActionPluginError { source: e })?;
 
-                    pre_processor_results.insert(pre_processor_str, result);
+                    plugin_results.insert(plugin_id, result);
                 }
 
                 let provider = self.providers.get(provider_id).ok_or_else(|| {
@@ -166,7 +165,7 @@ impl KeyStack {
 
                 Ok(KeyStackResponse::Action {
                     action_id: action_id.clone(),
-                    pre_processor_context: pre_processor_results,
+                    pre_action_context: plugin_results,
                     provider_response,
                 })
             }
@@ -189,7 +188,7 @@ mod tests {
                 auth_data: None,
                 user_id: None,
                 key_path: key_path.clone(),
-                pre_processor_ids: Vec::new(),
+                pre_action_plugin_ids: Vec::new(),
                 action_id: "generate".to_string(),
                 payload: Vec::new(),
                 provider_id: "builtin-libcrux-ed25519".to_string(),
@@ -216,7 +215,7 @@ mod tests {
                 auth_data: None,
                 user_id: None,
                 key_path,
-                pre_processor_ids: Vec::new(),
+                pre_action_plugin_ids: Vec::new(),
                 action_id: "sign".to_string(),
                 payload: payload.clone(),
                 provider_id: "builtin-libcrux-ed25519".to_string(),
