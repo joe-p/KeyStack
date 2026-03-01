@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-pub struct PreActionPluginGuestContext {
+pub struct ContextProviderGuestContext {
     pub user: String,
     pub key_path: PathBuf,
     pub action_id: String,

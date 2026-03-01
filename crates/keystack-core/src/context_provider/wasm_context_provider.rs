@@ -1,11 +1,11 @@
-use keystack_wasm_guest::PreActionPluginGuestContext;
+use keystack_wasm_guest::ContextProviderGuestContext;
 use snafu::Snafu;
 use wasmtime::{Caller, Engine, Linker, Memory, Module, Store, TypedFunc};
 
-use crate::plugin::{PreActionPlugin, PreActionPluginContext, PreActionPluginError};
+use crate::context_provider::{ContextProvider, ContextProviderContext, ContextProviderError};
 
-impl From<PreActionPluginContext> for PreActionPluginGuestContext {
-    fn from(context: PreActionPluginContext) -> Self {
+impl From<ContextProviderContext> for ContextProviderGuestContext {
+    fn from(context: ContextProviderContext) -> Self {
         Self {
             user: context.user.id().to_string(),
             key_path: context.key_path.0,
@@ -16,7 +16,7 @@ impl From<PreActionPluginContext> for PreActionPluginGuestContext {
 }
 
 #[derive(Debug, Snafu)]
-pub enum WasmPreActionPluginError {
+pub enum WasmContextProviderError {
     ModuleFailed,
     LinkerFailed,
     InstantiateFailed,
@@ -28,18 +28,18 @@ pub enum WasmPreActionPluginError {
     CallFailed,
 }
 
-pub struct WasmPreActionPlugin {
+pub struct WasmContextProvider {
     engine: Engine,
     module: Module,
 }
 
-impl WasmPreActionPlugin {
+impl WasmContextProvider {
     pub fn from_module(
         engine: &Engine,
         wasm_bytes: impl AsRef<[u8]>,
-    ) -> Result<Self, WasmPreActionPluginError> {
+    ) -> Result<Self, WasmContextProviderError> {
         let module =
-            Module::new(engine, wasm_bytes).map_err(|_| WasmPreActionPluginError::ModuleFailed)?;
+            Module::new(engine, wasm_bytes).map_err(|_| WasmContextProviderError::ModuleFailed)?;
 
         Ok(Self {
             engine: engine.clone(),
@@ -53,30 +53,30 @@ impl WasmPreActionPlugin {
         alloc_func: &TypedFunc<i32, i32>,
         memory: &Memory,
         data: &[u8],
-    ) -> Result<(i32, i32), WasmPreActionPluginError> {
+    ) -> Result<(i32, i32), WasmContextProviderError> {
         let len = data.len() as i32;
 
         let ptr = alloc_func
             .call(&mut *store, len)
-            .map_err(|_| WasmPreActionPluginError::AllocFailed)?;
+            .map_err(|_| WasmContextProviderError::AllocFailed)?;
 
         if ptr == 0 {
-            return Err(WasmPreActionPluginError::AllocFailed);
+            return Err(WasmContextProviderError::AllocFailed);
         }
 
         memory
             .write(store, ptr as usize, data)
-            .map_err(|_| WasmPreActionPluginError::MemoryWriteFailed)?;
+            .map_err(|_| WasmContextProviderError::MemoryWriteFailed)?;
 
         Ok((ptr, len))
     }
 }
 
-impl PreActionPlugin for WasmPreActionPlugin {
+impl ContextProvider for WasmContextProvider {
     fn pre_action_hook(
         &self,
-        context: &PreActionPluginContext,
-    ) -> Result<Vec<u8>, PreActionPluginError> {
+        context: &ContextProviderContext,
+    ) -> Result<Vec<u8>, ContextProviderError> {
         let start = std::time::Instant::now();
 
         // Host functionality can be arbitrary Rust functions and is provided
@@ -91,28 +91,28 @@ impl PreActionPlugin for WasmPreActionPlugin {
                     println!("Got {} from WebAssembly", param);
                 },
             )
-            .map_err(|_| WasmPreActionPluginError::LinkerFailed)?;
+            .map_err(|_| WasmContextProviderError::LinkerFailed)?;
 
         let mut store = Store::new(&self.engine, ());
 
         let instance = linker
             .instantiate(&mut store, &self.module)
-            .map_err(|_| WasmPreActionPluginError::InstantiateFailed)?;
+            .map_err(|_| WasmContextProviderError::InstantiateFailed)?;
 
         let memory = instance
             .get_memory(&mut store, "memory")
-            .ok_or(WasmPreActionPluginError::GetMemoryFailed)?;
+            .ok_or(WasmContextProviderError::GetMemoryFailed)?;
 
         let alloc_func = instance
             .get_typed_func::<i32, i32>(&mut store, "alloc")
-            .map_err(|_| WasmPreActionPluginError::GetFuncFailed)?;
+            .map_err(|_| WasmContextProviderError::GetFuncFailed)?;
 
         let hook = instance
             .get_typed_func::<(i32, i32, i32, i32, i32, i32, i32, i32), (i32, i32)>(
                 &mut store,
                 "pre_action_hook",
             )
-            .map_err(|_| WasmPreActionPluginError::GetFuncFailed)?;
+            .map_err(|_| WasmContextProviderError::GetFuncFailed)?;
 
         let user_bytes = context.user.id().to_string().into_bytes();
         let key_path_bytes = context
@@ -146,13 +146,13 @@ impl PreActionPlugin for WasmPreActionPlugin {
                     payload_len,
                 ),
             )
-            .map_err(|_| WasmPreActionPluginError::CallFailed)?;
+            .map_err(|_| WasmContextProviderError::CallFailed)?;
 
         let result_len_usize = result_len as usize;
         let mut result_bytes = vec![0u8; result_len_usize];
         memory
             .read(&mut store, result_ptr as usize, &mut result_bytes)
-            .map_err(|_| WasmPreActionPluginError::MemoryReadFailed)?;
+            .map_err(|_| WasmContextProviderError::MemoryReadFailed)?;
 
         println!("WASM pre-action plugin completed in {:?}", start.elapsed());
 
@@ -170,7 +170,7 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn test_wasm_pre_action_plugin_with_context() {
+    fn test_wasm_context_provider_with_context() {
         let engine = Engine::default();
         let wat = r#"
         (module
@@ -224,7 +224,7 @@ mod tests {
         )
     "#;
 
-        let plugin = WasmPreActionPlugin::from_module(&engine, wat).unwrap();
+        let plugin = WasmContextProvider::from_module(&engine, wat).unwrap();
 
         // Create test context with sample data
         let identity_provider = Arc::new(DisabledIdentityProvider);
@@ -233,7 +233,7 @@ mod tests {
         let action_id = "test-action".to_string();
         let payload = vec![1, 2, 3, 4, 5];
 
-        let context = PreActionPluginContext {
+        let context = ContextProviderContext {
             user,
             key_path,
             action_id,

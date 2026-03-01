@@ -6,13 +6,13 @@ use crate::{
     backend::Backend,
     crypto_provider::{CryptoProvider, CryptoProviderError},
     id_provider::IdentityProviderError,
-    plugin::PreActionPluginError,
+    context_provider::ContextProviderError,
 };
 
 pub mod backend;
+pub mod context_provider;
 pub mod crypto_provider;
 pub mod id_provider;
-pub mod plugin;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct KeyPath(PathBuf);
@@ -25,12 +25,12 @@ impl From<&str> for KeyPath {
 
 #[derive(Debug, Snafu)]
 pub enum KeyStackError {
-    #[snafu(display("PreActionPlugin failed: {}", source))]
-    PreActionPluginError { source: PreActionPluginError },
+    #[snafu(display("ContextProvider failed: {}", source))]
+    ContextProviderError { source: ContextProviderError },
     #[snafu(display("Provider action failed: {}", source))]
     CryptoProviderError { source: CryptoProviderError },
-    #[snafu(display("PreActionPlugin not found: {}", id))]
-    PreActionPluginNotFound { id: String },
+    #[snafu(display("ContextProvider not found: {}", id))]
+    ContextProviderNotFound { id: String },
     #[snafu(display("Provider not found: {}", id))]
     ProviderNotFound { id: String },
     #[snafu(display("Identity provider error: {}", source))]
@@ -46,7 +46,7 @@ impl From<IdentityProviderError> for KeyStackError {
 pub enum KeyStackRequest {
     Action {
         key_path: KeyPath,
-        pre_action_plugin_ids: Vec<String>,
+        context_provider_ids: Vec<String>,
         action_id: String,
         payload: Vec<u8>,
         crypto_provider_id: String,
@@ -64,9 +64,9 @@ pub enum KeyStackResponse {
 }
 
 pub struct KeyStack {
-    required_pre_action_plugins: Vec<String>,
+    required_context_providers: Vec<String>,
     backend: Arc<dyn Backend>,
-    pre_action_plugins: HashMap<String, Arc<dyn plugin::PreActionPlugin>>,
+    context_providers: HashMap<String, Arc<dyn context_provider::ContextProvider>>,
     crypto_providers: HashMap<String, Arc<dyn crypto_provider::CryptoProvider>>,
     identity_manager: Arc<dyn id_provider::IdentityProvider>,
 }
@@ -82,11 +82,11 @@ impl Default for KeyStack {
 
         Self {
             identity_manager: Arc::new(id_provider::disabled_id_provider::DisabledIdentityProvider),
-            required_pre_action_plugins: Vec::new(),
+            required_context_providers: Vec::new(),
             backend: Arc::new(backend::hashmap_backend::HashMapBackend {
                 store: std::sync::Mutex::new(HashMap::new()),
             }),
-            pre_action_plugins: HashMap::new(),
+            context_providers: HashMap::new(),
             crypto_providers,
         }
     }
@@ -100,7 +100,7 @@ impl KeyStack {
         match &request {
             KeyStackRequest::Action {
                 key_path,
-                pre_action_plugin_ids,
+                context_provider_ids,
                 action_id,
                 payload,
                 crypto_provider_id,
@@ -115,14 +115,14 @@ impl KeyStack {
                     "default-user".to_string(),
                     self.identity_manager.clone(),
                 );
-                let all_pre_action_plugin_ids = self
-                    .required_pre_action_plugins
+                let all_context_provider_ids = self
+                    .required_context_providers
                     .iter()
-                    .chain(pre_action_plugin_ids.iter())
+                    .chain(context_provider_ids.iter())
                     .cloned()
                     .collect::<Vec<_>>();
 
-                let context = plugin::PreActionPluginContext {
+                let context = context_provider::ContextProviderContext {
                     user,
                     key_path: key_path.clone(),
                     action_id: action_id.clone(),
@@ -130,16 +130,16 @@ impl KeyStack {
                 };
 
                 let mut plugin_results = HashMap::new();
-                for plugin_id in all_pre_action_plugin_ids {
-                    let plugin = self.pre_action_plugins.get(&plugin_id).ok_or_else(|| {
-                        KeyStackError::PreActionPluginNotFound {
+                for plugin_id in all_context_provider_ids {
+                    let plugin = self.context_providers.get(&plugin_id).ok_or_else(|| {
+                        KeyStackError::ContextProviderNotFound {
                             id: plugin_id.clone(),
                         }
                     })?;
 
                     let result = plugin
                         .pre_action_hook(&context)
-                        .map_err(|e| KeyStackError::PreActionPluginError { source: e })?;
+                        .map_err(|e| KeyStackError::ContextProviderError { source: e })?;
 
                     plugin_results.insert(plugin_id, result);
                 }
@@ -189,7 +189,7 @@ mod tests {
                 auth_data: None,
                 user_id: None,
                 key_path: key_path.clone(),
-                pre_action_plugin_ids: Vec::new(),
+                context_provider_ids: Vec::new(),
                 action_id: "generate".to_string(),
                 payload: Vec::new(),
                 crypto_provider_id: "builtin-libcrux-ed25519".to_string(),
@@ -216,7 +216,7 @@ mod tests {
                 auth_data: None,
                 user_id: None,
                 key_path,
-                pre_action_plugin_ids: Vec::new(),
+                context_provider_ids: Vec::new(),
                 action_id: "sign".to_string(),
                 payload: payload.clone(),
                 crypto_provider_id: "builtin-libcrux-ed25519".to_string(),
