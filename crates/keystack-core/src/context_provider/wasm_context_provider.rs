@@ -164,8 +164,7 @@ impl ContextProvider for WasmContextProvider {
 mod tests {
     use super::*;
     use crate::KeyPath;
-    use crate::id_provider::IdentityProvider;
-    use crate::id_provider::disabled_id_provider::DisabledIdentityProvider;
+    use crate::tests::TestUser;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -226,15 +225,13 @@ mod tests {
 
         let plugin = WasmContextProvider::from_module(&engine, wat).unwrap();
 
-        // Create test context with sample data
-        let identity_provider = Arc::new(DisabledIdentityProvider);
-        let user = identity_provider.authenticate_user("", None).await.unwrap();
+        let user = TestUser {};
         let key_path = KeyPath(PathBuf::from("test/key/path"));
         let action_id = "test-action".to_string();
         let payload = vec![1, 2, 3, 4, 5];
 
         let context = ContextProviderContext {
-            user,
+            user: Arc::new(user),
             key_path,
             action_id,
             payload,

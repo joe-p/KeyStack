@@ -5,14 +5,14 @@ use snafu::Snafu;
 use crate::{
     context_provider::ContextProviderError,
     crypto_provider::{CryptoProvider, CryptoProviderError},
-    id_provider::IdentityProviderError,
     secret_provider::SecretProvider,
+    user::User,
 };
 
 pub mod context_provider;
 pub mod crypto_provider;
-pub mod id_provider;
 pub mod secret_provider;
+pub mod user;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct KeyPath(PathBuf);
@@ -33,14 +33,6 @@ pub enum KeyStackError {
     ContextProviderNotFound { id: String },
     #[snafu(display("Provider not found: {}", id))]
     ProviderNotFound { id: String },
-    #[snafu(display("Identity provider error: {}", source))]
-    IdentityProvider { source: IdentityProviderError },
-}
-
-impl From<IdentityProviderError> for KeyStackError {
-    fn from(source: IdentityProviderError) -> Self {
-        KeyStackError::IdentityProvider { source }
-    }
 }
 
 pub enum KeyStackRequest {
@@ -50,8 +42,7 @@ pub enum KeyStackRequest {
         action_id: String,
         payload: Vec<u8>,
         crypto_provider_id: String,
-        auth_data: Option<Vec<u8>>,
-        user_id: Option<String>,
+        user: Arc<dyn User>,
     },
 }
 
@@ -68,7 +59,6 @@ pub struct KeyStack {
     secret_provider: Arc<dyn SecretProvider>,
     context_providers: HashMap<String, Arc<dyn context_provider::ContextProvider>>,
     crypto_providers: HashMap<String, Arc<dyn crypto_provider::CryptoProvider>>,
-    identity_provider: Arc<dyn id_provider::IdentityProvider>,
 }
 
 impl Default for KeyStack {
@@ -81,9 +71,6 @@ impl Default for KeyStack {
         )]);
 
         Self {
-            identity_provider: Arc::new(
-                id_provider::disabled_id_provider::DisabledIdentityProvider,
-            ),
             required_context_providers: Vec::new(),
             secret_provider: Arc::new(
                 secret_provider::hashmap_secret_provider::HashMapSecretProvider {
@@ -108,14 +95,8 @@ impl KeyStack {
                 action_id,
                 payload,
                 crypto_provider_id,
-                auth_data,
-                user_id,
+                user,
             } => {
-                let user = self
-                    .identity_provider
-                    .authenticate_user(&user_id.clone().unwrap_or_default(), auth_data.as_deref())
-                    .await?;
-
                 let all_context_provider_ids = self
                     .required_context_providers
                     .iter()
@@ -124,7 +105,7 @@ impl KeyStack {
                     .collect::<Vec<_>>();
 
                 let context = context_provider::ContextProviderContext {
-                    user,
+                    user: user.clone(),
                     key_path: key_path.clone(),
                     action_id: action_id.clone(),
                     payload: payload.clone(),
@@ -180,8 +161,24 @@ impl KeyStack {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::{KeyPath, KeyStack, KeyStackRequest, KeyStackResponse};
+    use async_trait::async_trait;
     use libcrux_ed25519::verify;
+
+    pub struct TestUser {}
+
+    #[async_trait]
+    impl crate::user::User for TestUser {
+        fn id(&self) -> &str {
+            "test-user"
+        }
+
+        async fn has_role(&self, _role: &str) -> Result<bool, crate::user::UserError> {
+            Ok(true)
+        }
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn default_keystack_generates_key_and_signs_payload() {
@@ -190,8 +187,7 @@ mod tests {
 
         let generate_response = keystack
             .handle_request(KeyStackRequest::Action {
-                auth_data: None,
-                user_id: None,
+                user: Arc::new(TestUser {}),
                 key_path: key_path.clone(),
                 context_provider_ids: Vec::new(),
                 action_id: "generate".to_string(),
@@ -217,8 +213,7 @@ mod tests {
 
         let sign_response = keystack
             .handle_request(KeyStackRequest::Action {
-                auth_data: None,
-                user_id: None,
+                user: Arc::new(TestUser {}),
                 key_path,
                 context_provider_ids: Vec::new(),
                 action_id: "sign".to_string(),
