@@ -130,27 +130,28 @@ impl KeyStack {
                     payload: payload.clone(),
                 };
 
-                let mut plugin_results = HashMap::new();
-                for plugin_id in all_context_provider_ids {
-                    let plugin = self.context_providers.get(&plugin_id).ok_or_else(|| {
-                        KeyStackError::ContextProviderNotFound {
-                            id: plugin_id.clone(),
-                        }
-                    })?;
+                let mut context_results = HashMap::new();
+                for ctx_provider_id in all_context_provider_ids {
+                    let ctx_provider =
+                        self.context_providers
+                            .get(&ctx_provider_id)
+                            .ok_or_else(|| KeyStackError::ContextProviderNotFound {
+                                id: ctx_provider_id.clone(),
+                            })?;
 
-                    let result = plugin
+                    let result = ctx_provider
                         .pre_action_hook(&context)
                         .map_err(|e| KeyStackError::ContextProviderError { source: e })?;
 
-                    plugin_results.insert(plugin_id, result);
+                    context_results.insert(ctx_provider_id, result);
                 }
 
-                let provider = self
-                    .crypto_providers
-                    .get(crypto_provider_id)
-                    .ok_or_else(|| KeyStackError::ProviderNotFound {
-                        id: crypto_provider_id.clone(),
-                    })?;
+                let crypto_provider =
+                    self.crypto_providers
+                        .get(crypto_provider_id)
+                        .ok_or_else(|| KeyStackError::ProviderNotFound {
+                            id: crypto_provider_id.clone(),
+                        })?;
 
                 let scoped_secret_provider = secret_provider::ScopedSecretProvider::new(
                     self.secret_provider.clone(),
@@ -162,14 +163,14 @@ impl KeyStack {
                     scoped_secret_provider,
                     payload: payload.clone(),
                 };
-                let provider_response = provider
+                let provider_response = crypto_provider
                     .do_action(&action_request)
                     .await
                     .map_err(|e| KeyStackError::CryptoProviderError { source: e })?;
 
                 Ok(KeyStackResponse::Action {
                     action_id: action_id.clone(),
-                    pre_action_context: plugin_results,
+                    pre_action_context: context_results,
                     provider_response,
                 })
             }
