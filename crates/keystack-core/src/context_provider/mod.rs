@@ -1,6 +1,8 @@
 use snafu::Snafu;
 
-use crate::{KeyPath, id_provider::User, context_provider::wasm_context_provider::WasmContextProviderError};
+use crate::{
+    KeyPath, context_provider::wasm_context_provider::WasmContextProviderError, id_provider::User,
+};
 
 pub mod wasm_context_provider;
 

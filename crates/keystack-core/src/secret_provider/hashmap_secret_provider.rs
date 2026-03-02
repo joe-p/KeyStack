@@ -13,7 +13,11 @@ pub struct HashMapSecretProvider {
 
 #[async_trait]
 impl SecretProvider for HashMapSecretProvider {
-    async fn read(&self, path: &KeyPath, destination: &mut [u8]) -> Result<usize, SecretProviderError> {
+    async fn read(
+        &self,
+        path: &KeyPath,
+        destination: &mut [u8],
+    ) -> Result<usize, SecretProviderError> {
         let store = self.store.lock().unwrap();
         if let Some(data) = store.get(&path.0.to_string_lossy().to_string()) {
             let len = data.len().min(destination.len());

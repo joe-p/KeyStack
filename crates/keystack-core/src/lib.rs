@@ -3,16 +3,16 @@ use std::{collections::HashMap, hash::Hash, path::PathBuf, sync::Arc};
 use snafu::Snafu;
 
 use crate::{
-    secret_provider::SecretProvider,
+    context_provider::ContextProviderError,
     crypto_provider::{CryptoProvider, CryptoProviderError},
     id_provider::IdentityProviderError,
-    context_provider::ContextProviderError,
+    secret_provider::SecretProvider,
 };
 
-pub mod secret_provider;
 pub mod context_provider;
 pub mod crypto_provider;
 pub mod id_provider;
+pub mod secret_provider;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct KeyPath(PathBuf);
@@ -83,9 +83,11 @@ impl Default for KeyStack {
         Self {
             identity_manager: Arc::new(id_provider::disabled_id_provider::DisabledIdentityProvider),
             required_context_providers: Vec::new(),
-            secret_provider: Arc::new(secret_provider::hashmap_secret_provider::HashMapSecretProvider {
-                store: std::sync::Mutex::new(HashMap::new()),
-            }),
+            secret_provider: Arc::new(
+                secret_provider::hashmap_secret_provider::HashMapSecretProvider {
+                    store: std::sync::Mutex::new(HashMap::new()),
+                },
+            ),
             context_providers: HashMap::new(),
             crypto_providers,
         }
@@ -151,8 +153,10 @@ impl KeyStack {
                         id: crypto_provider_id.clone(),
                     })?;
 
-                let scoped_secret_provider =
-                    secret_provider::ScopedSecretProvider::new(self.secret_provider.clone(), key_path.clone());
+                let scoped_secret_provider = secret_provider::ScopedSecretProvider::new(
+                    self.secret_provider.clone(),
+                    key_path.clone(),
+                );
 
                 let action_request = crypto_provider::ActionRequest {
                     action_id: action_id.clone(),
