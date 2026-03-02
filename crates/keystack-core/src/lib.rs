@@ -68,7 +68,7 @@ pub struct KeyStack {
     secret_provider: Arc<dyn SecretProvider>,
     context_providers: HashMap<String, Arc<dyn context_provider::ContextProvider>>,
     crypto_providers: HashMap<String, Arc<dyn crypto_provider::CryptoProvider>>,
-    identity_manager: Arc<dyn id_provider::IdentityProvider>,
+    identity_provider: Arc<dyn id_provider::IdentityProvider>,
 }
 
 impl Default for KeyStack {
@@ -81,7 +81,9 @@ impl Default for KeyStack {
         )]);
 
         Self {
-            identity_manager: Arc::new(id_provider::disabled_id_provider::DisabledIdentityProvider),
+            identity_provider: Arc::new(
+                id_provider::disabled_id_provider::DisabledIdentityProvider,
+            ),
             required_context_providers: Vec::new(),
             secret_provider: Arc::new(
                 secret_provider::hashmap_secret_provider::HashMapSecretProvider {
@@ -109,13 +111,13 @@ impl KeyStack {
                 auth_data,
                 user_id,
             } => {
-                self.identity_manager
-                    .user_authenticate(&user_id.clone().unwrap_or_default(), auth_data.as_deref())
+                self.identity_provider
+                    .authenticate_user(&user_id.clone().unwrap_or_default(), auth_data.as_deref())
                     .await?;
 
                 let user = id_provider::User::new(
                     "default-user".to_string(),
-                    self.identity_manager.clone(),
+                    self.identity_provider.clone(),
                 );
                 let all_context_provider_ids = self
                     .required_context_providers

@@ -8,7 +8,7 @@ KeyStack defines multiple providers that can be implemented via WASM modules or 
 | ----------------- | ------------------------------------------------------------------------------------------------------ | ------------ | ------------ |
 | Secret Provider   | Store and retrieve secrets.                                                                            | Yes          | TODO         |
 | Crypto Provider   | Perform actions with secrets (i.e. signing)                                                            | Yes          | TODO         |
-| Identity Provider | Manage users, groups, roles, and authentication                                                        | Yes          | TODO         |
+| Identity Provider | User authentication and role verification                                                              | Yes          | TODO         |
 | Context Provider  | Takes action based on the context of a request (i.e. deny access) and/or inject context into a request | Yes          | Yes          |
 | Log Provider      | Logging events from `keystack-core` and other providers                                                | TODO         | TODO         |
 
