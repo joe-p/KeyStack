@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use snafu::Snafu;
 
 use crate::{
-    KeyPath, context_provider::wasm_context_provider::WasmContextProviderError, id_provider::User,
+    KeyPath, context_provider::wasm_context_provider::WasmContextProviderError,
+    id_provider::AuthenticatedUser,
 };
 
 pub mod wasm_context_provider;
@@ -18,7 +21,7 @@ impl From<WasmContextProviderError> for ContextProviderError {
 }
 
 pub struct ContextProviderContext {
-    pub user: User,
+    pub user: Arc<dyn AuthenticatedUser>,
     pub key_path: KeyPath,
     pub action_id: String,
     pub payload: Vec<u8>,

@@ -11,28 +11,10 @@ pub enum IdentityProviderError {
     NotImplemented,
 }
 
-pub struct User {
-    user_id: String,
-    identity_provider: Arc<dyn IdentityProvider>,
-}
-
-impl User {
-    pub fn new(user_id: String, identity_provider: Arc<dyn IdentityProvider>) -> Self {
-        Self {
-            user_id,
-            identity_provider,
-        }
-    }
-
-    pub async fn has_role(&self, role_id: &str) -> Result<bool, IdentityProviderError> {
-        self.identity_provider
-            .user_has_role(&self.user_id, role_id)
-            .await
-    }
-
-    pub fn id(&self) -> &str {
-        &self.user_id
-    }
+#[async_trait]
+pub trait AuthenticatedUser {
+    fn id(&self) -> &str;
+    async fn has_role(&self, role_id: &str) -> Result<bool, IdentityProviderError>;
 }
 
 #[async_trait]
@@ -42,11 +24,5 @@ pub trait IdentityProvider {
         &self,
         user_id: &str,
         extra_data: Option<&[u8]>,
-    ) -> Result<bool, IdentityProviderError>;
-
-    async fn user_has_role(
-        &self,
-        user_id: &str,
-        role_id: &str,
-    ) -> Result<bool, IdentityProviderError>;
+    ) -> Result<Arc<dyn AuthenticatedUser>, IdentityProviderError>;
 }

@@ -111,14 +111,11 @@ impl KeyStack {
                 auth_data,
                 user_id,
             } => {
-                self.identity_provider
+                let user = self
+                    .identity_provider
                     .authenticate_user(&user_id.clone().unwrap_or_default(), auth_data.as_deref())
                     .await?;
 
-                let user = id_provider::User::new(
-                    "default-user".to_string(),
-                    self.identity_provider.clone(),
-                );
                 let all_context_provider_ids = self
                     .required_context_providers
                     .iter()
