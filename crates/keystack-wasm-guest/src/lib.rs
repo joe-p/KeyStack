@@ -7,6 +7,42 @@ pub struct ContextProviderGuestContext {
     pub payload: Vec<u8>,
 }
 
+impl ContextProviderGuestContext {
+    /// # Safety
+    /// This function assumes the host has provided valid pointers and lengths for UTF-8 strings and
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn from_parts(
+        user_ptr: *const u8,
+        user_len: usize,
+        key_path_ptr: *const u8,
+        key_path_len: usize,
+        action_id_ptr: *const u8,
+        action_id_len: usize,
+        payload_ptr: *const u8,
+        payload_len: usize,
+    ) -> Self {
+        let user = unsafe {
+            String::from_utf8_lossy(std::slice::from_raw_parts(user_ptr, user_len)).into_owned()
+        };
+        let key_path = unsafe {
+            String::from_utf8_lossy(std::slice::from_raw_parts(key_path_ptr, key_path_len))
+                .into_owned()
+        };
+        let action_id = unsafe {
+            String::from_utf8_lossy(std::slice::from_raw_parts(action_id_ptr, action_id_len))
+                .into_owned()
+        };
+        let payload = unsafe { std::slice::from_raw_parts(payload_ptr, payload_len).to_vec() };
+
+        Self {
+            user,
+            key_path: key_path.into(),
+            action_id,
+            payload,
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn alloc(len: u32) -> *mut u8 {
     if len == 0 {
