@@ -13,41 +13,29 @@ pub struct ContextProviderGuestContext {
     pub payload: Vec<u8>,
 }
 
+/// # Safety
+/// This function assumes the host has provided valid pointers and lengths.
 #[unsafe(no_mangle)]
-pub extern "C" fn pre_action_hook(
-    user_ptr: i32,
-    user_len: i32,
-    key_path_ptr: i32,
-    key_path_len: i32,
-    action_id_ptr: i32,
-    action_id_len: i32,
-    payload_ptr: i32,
-    payload_len: i32,
+pub unsafe extern "C" fn pre_action_hook(
+    user_ptr: *const u8,
+    user_len: usize,
+    key_path_ptr: *const u8,
+    key_path_len: usize,
+    action_id_ptr: *const u8,
+    action_id_len: usize,
+    payload_ptr: *const u8,
+    payload_len: usize,
 ) -> *const u8 {
     // SAFETY: Host guarantees valid pointers and lengths
-    let user = unsafe {
-        String::from_utf8_lossy(slice::from_raw_parts(
-            user_ptr as *const u8,
-            user_len as usize,
-        ))
-        .into_owned()
-    };
+    let user =
+        unsafe { String::from_utf8_lossy(slice::from_raw_parts(user_ptr, user_len)).into_owned() };
     let key_path = unsafe {
-        String::from_utf8_lossy(slice::from_raw_parts(
-            key_path_ptr as *const u8,
-            key_path_len as usize,
-        ))
-        .into_owned()
+        String::from_utf8_lossy(slice::from_raw_parts(key_path_ptr, key_path_len)).into_owned()
     };
     let action_id = unsafe {
-        String::from_utf8_lossy(slice::from_raw_parts(
-            action_id_ptr as *const u8,
-            action_id_len as usize,
-        ))
-        .into_owned()
+        String::from_utf8_lossy(slice::from_raw_parts(action_id_ptr, action_id_len)).into_owned()
     };
-    let payload =
-        unsafe { slice::from_raw_parts(payload_ptr as *const u8, payload_len as usize).to_vec() };
+    let payload = unsafe { slice::from_raw_parts(payload_ptr, payload_len).to_vec() };
 
     // For now, just return dummy data [0x01, 0x02, 0x03, 0x04]
     let _context = ContextProviderGuestContext {
