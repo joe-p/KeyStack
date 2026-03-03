@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/keystack-core", "crates/keystack-wasm-guest", "crates/keystack-wasm-guest-macros", "examples/wasm-context-provider"]
+members = ["crates/keystack-core", "crates/keystack-wasm-guest", "crates/keystack-wasm-guest-macros", "examples/simple-context-provider"]
 
 resolver = "2"
 

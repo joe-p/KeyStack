@@ -1226,6 +1226,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "simple-context-provider"
+version = "0.1.0"
+dependencies = [
+ "keystack-wasm-guest",
+]
+
+[[package]]
 name = "sized-chunks"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1551,13 +1558,6 @@ dependencies = [
  "wasm-encoder 0.244.0",
  "wasmparser 0.244.0",
  "wat",
-]
-
-[[package]]
-name = "wasm-context-provider"
-version = "0.1.0"
-dependencies = [
- "keystack-wasm-guest",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 [package]
-name = "wasm-context-provider"
+name = "simple-context-provider"
 version = "0.1.0"
 edition = "2024"
 

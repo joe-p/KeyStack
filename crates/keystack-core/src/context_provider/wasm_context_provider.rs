@@ -176,7 +176,7 @@ mod tests {
             .args([
                 "build",
                 "--package",
-                "wasm-context-provider",
+                "simple-context-provider",
                 "--target",
                 "wasm32-unknown-unknown",
             ])
@@ -188,7 +188,7 @@ mod tests {
 
         // Load the compiled Rust guest WASM
         let wasm_bytes = include_bytes!(
-            "../../../../target/wasm32-unknown-unknown/debug/wasm_context_provider.wasm"
+            "../../../../target/wasm32-unknown-unknown/debug/simple_context_provider.wasm"
         );
 
         let plugin = WasmContextProvider::from_module(&engine, wasm_bytes).unwrap();
