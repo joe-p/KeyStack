@@ -1,17 +1,7 @@
 use std::slice;
 
+use keystack_wasm_guest::ContextProviderGuestContext;
 pub use keystack_wasm_guest::alloc;
-
-/// Context structure passed from host to guest.
-///
-/// This struct is used by the host to serialize context data
-/// before passing it to the guest.
-pub struct ContextProviderGuestContext {
-    pub user: String,
-    pub key_path: String,
-    pub action_id: String,
-    pub payload: Vec<u8>,
-}
 
 /// # Safety
 /// This function assumes the host has provided valid pointers and lengths.
@@ -26,7 +16,6 @@ pub unsafe extern "C" fn pre_action_hook(
     payload_ptr: *const u8,
     payload_len: usize,
 ) -> *const u8 {
-    // SAFETY: Host guarantees valid pointers and lengths
     let user =
         unsafe { String::from_utf8_lossy(slice::from_raw_parts(user_ptr, user_len)).into_owned() };
     let key_path = unsafe {
@@ -40,7 +29,7 @@ pub unsafe extern "C" fn pre_action_hook(
     // For now, just return dummy data [0x01, 0x02, 0x03, 0x04]
     let _context = ContextProviderGuestContext {
         user,
-        key_path,
+        key_path: key_path.into(),
         action_id,
         payload,
     };
