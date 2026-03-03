@@ -172,6 +172,20 @@ mod tests {
     async fn test_wasm_context_provider_with_context() {
         let engine = Engine::default();
 
+        std::process::Command::new("cargo")
+            .args([
+                "build",
+                "--package",
+                "wasm-context-provider",
+                "--target",
+                "wasm32-unknown-unknown",
+            ])
+            .status()
+            .expect("Failed to build WASM guest module");
+
+        // Sleep for a bit to ensure the file system has updated with the new WASM file before we try to load it
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
         // Load the compiled Rust guest WASM
         let wasm_bytes = include_bytes!(
             "../../../../target/wasm32-unknown-unknown/debug/wasm_context_provider.wasm"

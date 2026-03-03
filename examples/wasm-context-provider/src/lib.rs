@@ -1,16 +1,6 @@
-use keystack_wasm_guest::alloc as guest_alloc;
 use std::slice;
 
-/// Allocate memory in the guest WASM module.
-/// The host calls this to allocate space for context data.
-///
-/// # Safety
-/// This function leaks memory (by design for WASM guests). The host
-/// is responsible for managing the guest's memory lifecycle.
-#[unsafe(no_mangle)]
-pub extern "C" fn alloc(len: u32) -> *mut u8 {
-    guest_alloc(len)
-}
+pub use keystack_wasm_guest::alloc;
 
 /// Context structure passed from host to guest.
 ///
