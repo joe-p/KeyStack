@@ -1542,6 +1542,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-context-provider"
+version = "0.1.0"
+dependencies = [
+ "keystack-wasm-guest",
+]
+
+[[package]]
 name = "wasm-encoder"
 version = "0.244.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

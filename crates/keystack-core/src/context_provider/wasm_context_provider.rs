@@ -1,6 +1,6 @@
 use keystack_wasm_guest::ContextProviderGuestContext;
 use snafu::Snafu;
-use wasmtime::{Caller, Engine, Linker, Memory, Module, Store, TypedFunc};
+use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 
 use crate::context_provider::{ContextProvider, ContextProviderContext, ContextProviderError};
 
@@ -18,7 +18,6 @@ impl From<ContextProviderContext> for ContextProviderGuestContext {
 #[derive(Debug, Snafu)]
 pub enum WasmContextProviderError {
     ModuleFailed,
-    LinkerFailed,
     InstantiateFailed,
     GetFuncFailed,
     GetMemoryFailed,
@@ -81,17 +80,7 @@ impl ContextProvider for WasmContextProvider {
 
         // Host functionality can be arbitrary Rust functions and is provided
         // to guests through a `Linker`.
-        let mut linker = Linker::new(&self.engine);
-
-        linker
-            .func_wrap(
-                "host",
-                "host_func",
-                move |_caller: Caller<_>, param: i32| {
-                    println!("Got {} from WebAssembly", param);
-                },
-            )
-            .map_err(|_| WasmContextProviderError::LinkerFailed)?;
+        let linker = Linker::new(&self.engine);
 
         let mut store = Store::new(&self.engine, ());
 
@@ -108,7 +97,7 @@ impl ContextProvider for WasmContextProvider {
             .map_err(|_| WasmContextProviderError::GetFuncFailed)?;
 
         let hook = instance
-            .get_typed_func::<(i32, i32, i32, i32, i32, i32, i32, i32), (i32, i32)>(
+            .get_typed_func::<(i32, i32, i32, i32, i32, i32, i32, i32), i32>(
                 &mut store,
                 "pre_action_hook",
             )
@@ -132,7 +121,7 @@ impl ContextProvider for WasmContextProvider {
         let (payload_ptr, payload_len) =
             self.alloc_and_write(&mut store, &alloc_func, &memory, &context.payload)?;
 
-        let (result_ptr, result_len) = hook
+        let result_ptr = hook
             .call(
                 &mut store,
                 (
@@ -148,10 +137,21 @@ impl ContextProvider for WasmContextProvider {
             )
             .map_err(|_| WasmContextProviderError::CallFailed)?;
 
-        let result_len_usize = result_len as usize;
-        let mut result_bytes = vec![0u8; result_len_usize];
+        if result_ptr == 0 {
+            return Err(WasmContextProviderError::CallFailed.into());
+        }
+
+        // Read result length from first 4 bytes (little-endian i32)
+        let mut result_len_bytes = [0u8; 4];
         memory
-            .read(&mut store, result_ptr as usize, &mut result_bytes)
+            .read(&mut store, result_ptr as usize, &mut result_len_bytes)
+            .map_err(|_| WasmContextProviderError::MemoryReadFailed)?;
+        let result_len = i32::from_le_bytes(result_len_bytes) as usize;
+
+        // Read actual result data (starts after the 4-byte length prefix)
+        let mut result_bytes = vec![0u8; result_len];
+        memory
+            .read(&mut store, (result_ptr as usize) + 4, &mut result_bytes)
             .map_err(|_| WasmContextProviderError::MemoryReadFailed)?;
 
         println!("WASM pre-action plugin completed in {:?}", start.elapsed());
@@ -171,59 +171,13 @@ mod tests {
     #[tokio::test]
     async fn test_wasm_context_provider_with_context() {
         let engine = Engine::default();
-        let wat = r#"
-        (module
-            (import "host" "host_func" (func $host_hello (param i32)))
-            
-            ;; Memory export for host to write context data
-            (memory (export "memory") 2)
-            
-            ;; Heap starts after data/stack section
-            (global $heap_offset (mut i32) (i32.const 1024))
-            
-            ;; alloc: Simple bump allocator
-            ;; Returns pointer to allocated memory or 0 on failure
-            (func $alloc (export "alloc") (param $size i32) (result i32)
-                (local $ptr i32)
-                ;; Get current heap pointer
-                (local.set $ptr (global.get $heap_offset))
-                ;; Check bounds (memory size is 2 pages = 128KB = 131072 bytes)
-                (if (i32.gt_u (i32.add (local.get $ptr) (local.get $size)) (i32.const 131072))
-                    (then (return (i32.const 0)))
-                )
-                ;; Advance heap pointer
-                (global.set $heap_offset (i32.add (local.get $ptr) (local.get $size)))
-                ;; Return allocated pointer
-                (local.get $ptr)
-            )
-             
-            ;; pre_action_hook: Accepts 8 parameters (4 pointers + 4 lengths) for context members
-            ;; user_ptr, user_len, key_path_ptr, key_path_len,
-            ;; action_id_ptr, action_id_len, payload_ptr, payload_len
-            ;; Returns: (ptr, len) tuple pointing to result data
-            (func (export "pre_action_hook") 
-                (param $user_ptr i32) (param $user_len i32)
-                (param $key_path_ptr i32) (param $key_path_len i32)
-                (param $action_id_ptr i32) (param $action_id_len i32)
-                (param $payload_ptr i32) (param $payload_len i32)
-                (result i32 i32)
-                (local $result_ptr i32)
-                (local $result_len i32)
-                ;; Allocate memory for result data (4 bytes for test data)
-                (local.set $result_len (i32.const 4))
-                (local.set $result_ptr (call $alloc (local.get $result_len)))
-                ;; Write test result data: [0x01, 0x02, 0x03, 0x04]
-                (i32.store8 (local.get $result_ptr) (i32.const 1))
-                (i32.store8 (i32.add (local.get $result_ptr) (i32.const 1)) (i32.const 2))
-                (i32.store8 (i32.add (local.get $result_ptr) (i32.const 2)) (i32.const 3))
-                (i32.store8 (i32.add (local.get $result_ptr) (i32.const 3)) (i32.const 4))
-                ;; Return (ptr, len) tuple
-                (return (local.get $result_ptr) (local.get $result_len))
-            )
-        )
-    "#;
 
-        let plugin = WasmContextProvider::from_module(&engine, wat).unwrap();
+        // Load the compiled Rust guest WASM
+        let wasm_bytes = include_bytes!(
+            "../../../../target/wasm32-unknown-unknown/debug/wasm_context_provider.wasm"
+        );
+
+        let plugin = WasmContextProvider::from_module(&engine, wasm_bytes).unwrap();
 
         let user = TestUser {};
         let key_path = KeyPath(PathBuf::from("test/key/path"));
