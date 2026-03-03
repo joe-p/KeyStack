@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+pub use keystack_wasm_guest_macros::pre_action_hook;
+
 pub struct ContextProviderGuestContext {
     pub user: String,
     pub key_path: PathBuf,

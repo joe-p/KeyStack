@@ -726,6 +726,18 @@ dependencies = [
 [[package]]
 name = "keystack-wasm-guest"
 version = "0.1.0"
+dependencies = [
+ "keystack-wasm-guest-macros",
+]
+
+[[package]]
+name = "keystack-wasm-guest-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "leb128fmt"
