@@ -183,13 +183,10 @@ mod tests {
             .status()
             .expect("Failed to build WASM guest module");
 
-        // Sleep for a bit to ensure the file system has updated with the new WASM file before we try to load it
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        // Load the compiled Rust guest WASM
-        let wasm_bytes = include_bytes!(
-            "../../../../target/wasm32-unknown-unknown/debug/simple_context_provider.wasm"
-        );
+        let cargo_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+        let wasm_path = cargo_dir
+            .join("../../target/wasm32-unknown-unknown/debug/simple_context_provider.wasm");
+        let wasm_bytes = std::fs::read(wasm_path).unwrap();
 
         let plugin = WasmContextProvider::from_module(&engine, wasm_bytes).unwrap();
 
